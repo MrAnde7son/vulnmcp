@@ -1,6 +1,6 @@
 {
   "name": "vulnmcp",
-  "version": "2026.6.1",
+  "version": "2026.6.2",
   "description": "Local MCP server for on-machine vulnerability detection and guided, approval-gated remediation. Works with Claude Desktop. macOS, Linux, and Windows.",
   "license": "Apache-2.0",
   "author": "Hakuna",
@@ -23,7 +23,8 @@
     "start": "node dist/index.js",
     "telemetry": "tsx src/cli.ts",
     "fetch:trivy": "node scripts/fetch-trivy.mjs",
-    "bundle": "npm run build && npx -y @anthropic-ai/mcpb pack . vulnmcp.mcpb",
+    "fetch:db": "node scripts/fetch-trivy-db.mjs",
+    "bundle": "npm run build && npm run fetch:db && npx -y @anthropic-ai/mcpb pack . vulnmcp.mcpb",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

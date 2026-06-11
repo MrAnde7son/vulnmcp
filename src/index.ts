@@ -16,7 +16,7 @@ import { applyInput, applyHandler } from "./tools/apply.js";
 import { telemetry } from "./lib/telemetry.js";
 import { telemetryEnabled, loadConfig } from "./lib/config.js";
 
-const VERSION = "2026.6.1";
+const VERSION = "2026.6.2";
 
 function ok(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -30,8 +30,10 @@ async function main() {
     {
       title: "Scan system for vulnerabilities",
       description:
-        "Run a local Trivy scan of the host and return structured CVE findings. " +
-        "Stays entirely on this machine. Scope: os | packages | containers | all.",
+        "Run a local, offline Trivy scan and return structured CVE findings. Stays on this machine. " +
+        "scope=os scans installed OS packages (Linux only). scope=packages scans a `target` directory " +
+        "for dependency vulns. scope=containers scans an `image`. On macOS/Windows there is no whole-disk " +
+        "scan — if the response has needs_input, ask the user for a target directory or image, then retry.",
       inputSchema: scanInput,
     },
     async (args) => ok(await scanHandler(args))

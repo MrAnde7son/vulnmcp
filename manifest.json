@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "vulnmcp",
   "display_name": "VulnMCP — Vulnerability Detection & Response",
-  "version": "2026.6.1",
+  "version": "2026.6.2",
   "description": "On-machine vulnerability detection and approval-gated remediation for Claude Desktop. macOS, Linux, Windows.",
   "long_description": "VulnMCP runs a local Trivy scan of your host, ranks the findings, and walks you through fixing them — showing the exact commands, rollback, and blast radius, and never changing anything without your explicit APPLY. No cloud, no background agent. Telemetry is opt-in and anonymous.",
   "author": {
@@ -22,6 +22,7 @@
       "env": {
         "VULNMCP_TELEMETRY": "${user_config.telemetry}",
         "VULNMCP_TRIVY_PATH": "${__dirname}/bin/trivy",
+        "VULNMCP_TRIVY_CACHE": "${__dirname}/trivy-cache",
         "VULNMCP_RECIPES_DIR": "${__dirname}/recipes",
         "VULNMCP_POSTHOG_KEY": ""
       }

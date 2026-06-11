@@ -44,12 +44,23 @@ jobs:
       # Drop dev dependencies so only runtime deps land in the bundle.
       - run: npm prune --omit=dev
 
-      - name: Fetch + verify Trivy
+      - name: Fetch + verify Trivy (target-platform binary)
         env:
           # Set repo variable ALLOW_UNPINNED=1 to build before SHA-256s are
           # pinned in scripts/fetch-trivy.mjs (dev/testing only).
           VULNMCP_ALLOW_UNPINNED: ${{ vars.ALLOW_UNPINNED }}
         run: node scripts/fetch-trivy.mjs --platform ${{ matrix.platform }}
+
+      - name: Install runner Trivy (to download the OS-agnostic DB)
+        uses: aquasecurity/setup-trivy@v0.2.3
+        with:
+          version: v0.71.0
+          cache: true
+
+      - name: Pre-download Trivy DB into the bundle
+        # Bundled so a scan NEVER hits the network (the first-run ghcr.io pull is
+        # what blew the Claude Desktop tool timeout). Uses the runner's trivy.
+        run: node scripts/fetch-trivy-db.mjs --trivy "$(command -v trivy)"
 
       - name: Inject telemetry key (opt-in stays off until user enables)
         # Bakes the public PostHog ingest key from a repo secret into the bundled

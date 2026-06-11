@@ -1,6 +1,7 @@
 node_modules/
 dist/
 bin/
+trivy-cache/
 *.mcpb
 .trivy-dl-*/
 *.log

@@ -1,9 +1,15 @@
 /**
  * Trivy wrapper.
  *
- * Runs the local Trivy binary in offline/local-fs mode and normalizes its JSON
- * into VulnMCP's finding schema. The model never sees raw scanner noise — only
- * the structured findings defined here.
+ * Two hard lessons baked in here:
+ *   1. NEVER download the vuln DB inside a tool call. First-run DB pulls from
+ *      ghcr.io can take minutes (or stall on locked-down networks) and blow the
+ *      MCP client timeout. The .mcpb ships a pre-downloaded DB; at runtime we
+ *      pass --skip-db-update and a bundled --cache-dir, so scans are offline and
+ *      fast.
+ *   2. NEVER scan `/`. `trivy rootfs /` walks the entire disk — catastrophic on
+ *      macOS. Host OS-package scanning is a Linux capability; everywhere else we
+ *      scan a bounded target directory or a container image.
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -25,7 +31,6 @@ export interface Finding {
   epss_score: number | null;
   description: string;
   published: string | null;
-  /** Which package manager owns this package, if Trivy reports it. */
   pkg_manager: string | null;
 }
 
@@ -35,14 +40,19 @@ export interface ScanResult {
   os: string;
   scanner: { name: "trivy"; version: string };
   scope: Scope;
+  target: string;
   findings: Finding[];
 }
 
-/**
- * Resolve the trivy binary: env override (with Windows .exe fallback), then PATH.
- * The .mcpb manifest passes a platform-agnostic bin/trivy path; on Windows the
- * bundled file is trivy.exe, so we append the extension when needed.
- */
+/** A recoverable, user-facing condition (wrong platform, missing target). */
+export class ScanGuidance extends Error {
+  constructor(public code: string, message: string, public suggestion?: string) {
+    super(message);
+    this.name = "ScanGuidance";
+  }
+}
+
+/** Resolve the trivy binary: env override (with Windows .exe fallback), then PATH. */
 export function trivyPath(): string {
   const configured = process.env.VULNMCP_TRIVY_PATH;
   if (!configured) return "trivy";
@@ -54,11 +64,17 @@ export function trivyPath(): string {
   return configured;
 }
 
+/** Bundled, pre-populated DB cache (set by the .mcpb manifest). */
+function cacheDir(): string | null {
+  const dir = process.env.VULNMCP_TRIVY_CACHE;
+  return dir && fs.existsSync(dir) ? dir : null;
+}
+
 export async function trivyVersion(): Promise<string> {
-  const { stdout } = await pexecFile(trivyPath(), ["--version", "--format", "json"], {
-    timeout: 10_000,
-    windowsHide: true,
-  });
+  const args = ["--version", "--format", "json"];
+  const cache = cacheDir();
+  if (cache) args.push("--cache-dir", cache);
+  const { stdout } = await pexecFile(trivyPath(), args, { timeout: 10_000, windowsHide: true });
   try {
     return JSON.parse(stdout).Version ?? "unknown";
   } catch {
@@ -73,7 +89,6 @@ function normSeverity(s: string | undefined): Severity {
   return (SEVERITY_SET.has(up as Severity) ? up : "UNKNOWN") as Severity;
 }
 
-/** Pull the highest available CVSS score across vendor sources. */
 function bestCvss(vuln: any): number | null {
   const cvss = vuln?.CVSS;
   if (!cvss || typeof cvss !== "object") return null;
@@ -85,7 +100,7 @@ function bestCvss(vuln: any): number | null {
   return best;
 }
 
-function mapResults(raw: any, scope: Scope): Finding[] {
+function mapResults(raw: any): Finding[] {
   const out: Finding[] = [];
   const results = Array.isArray(raw?.Results) ? raw.Results : [];
   for (const result of results) {
@@ -106,51 +121,113 @@ function mapResults(raw: any, scope: Scope): Finding[] {
             : null,
         description: v.Description ?? v.Title ?? "",
         published: v.PublishedDate || null,
-        pkg_manager: result.Class === "lang-pkgs" ? result.Type ?? null : result.Type ?? null,
+        pkg_manager: result.Type ?? null,
       });
     }
   }
   return out;
 }
 
-/** Build the trivy argv for a given scope and OS. */
-function buildArgs(scope: Scope, family: OsFamily): string[] {
-  // `rootfs /` enumerates OS + installed packages on the host.
-  // `fs .` covers language dependencies in the working tree.
-  const base = ["--quiet", "--format", "json", "--scanners", "vuln"];
-  const target = family === "windows" ? "C:\\" : "/";
-  switch (scope) {
-    case "packages":
-      return ["fs", ...base, "--pkg-types", "library", "."];
-    case "containers":
-      // Container image scanning is invoked with an explicit image elsewhere;
-      // for a host scan we fall back to rootfs.
-      return ["rootfs", ...base, target];
-    case "os":
-      return ["rootfs", ...base, "--pkg-types", "os", target];
-    case "all":
-    default:
-      return ["rootfs", ...base, target];
-  }
-}
+// Directories that are huge, volatile, or irrelevant to package scanning.
+const SKIP_DIRS_POSIX = ["/proc", "/sys", "/dev", "/run", "/var/lib/docker", "/var/lib/containerd"];
 
 export interface ScanOptions {
   scope?: Scope;
-  /** Use only the local vuln DB; never hit the network. */
-  offline?: boolean;
+  /** Directory to scan for installed/declared packages (required off-Linux). */
+  target?: string;
+  /** Container image reference (for scope=containers). */
+  image?: string;
   timeoutMs?: number;
+}
+
+interface BuiltScan {
+  args: string[];
+  /** Human label for what was scanned. */
+  target: string;
+}
+
+/**
+ * Build the trivy argv. Throws ScanGuidance for conditions the user must
+ * resolve (no target on macOS/Windows, OS scope off Linux, missing image).
+ */
+function buildScan(scope: Scope, family: OsFamily, opts: ScanOptions, trivySecs: number): BuiltScan {
+  const common = ["--quiet", "--format", "json", "--scanners", "vuln", "--timeout", `${trivySecs}s`];
+  const cache = cacheDir();
+  if (cache) {
+    // Offline-first: use the bundled DB, never reach the network.
+    common.push("--cache-dir", cache, "--skip-db-update", "--skip-java-db-update", "--offline-scan");
+  }
+
+  const validTarget = (t?: string): string | null => {
+    if (!t) return null;
+    if (!fs.existsSync(t)) throw new ScanGuidance("bad_target", `target path does not exist: ${t}`);
+    return t;
+  };
+
+  if (scope === "containers") {
+    if (!opts.image) {
+      throw new ScanGuidance(
+        "needs_image",
+        "scope=containers requires an `image` reference.",
+        "Ask the user which container image to scan, e.g. nginx:1.27."
+      );
+    }
+    return { args: ["image", ...common, opts.image], target: opts.image };
+  }
+
+  const target = validTarget(opts.target);
+
+  if (scope === "packages") {
+    if (!target) {
+      throw new ScanGuidance(
+        "needs_target",
+        "scope=packages requires a `target` directory to scan for dependency vulnerabilities.",
+        "Ask the user for a project directory (where package-lock.json, requirements.txt, go.mod, etc. live)."
+      );
+    }
+    return { args: ["fs", ...common, "--pkg-types", "library", target], target };
+  }
+
+  if (scope === "os") {
+    if (family !== "linux") {
+      throw new ScanGuidance(
+        "os_unsupported",
+        `OS-package scanning isn't supported on ${family} (Trivy enumerates installed OS packages on Linux only).`,
+        "On macOS/Windows, scan a project directory with scope=packages and a target path, or a container image with scope=containers."
+      );
+    }
+    const skip = SKIP_DIRS_POSIX.flatMap((d) => ["--skip-dirs", d]);
+    return { args: ["rootfs", ...common, "--pkg-types", "os", ...skip, "/"], target: "/ (OS packages)" };
+  }
+
+  // scope === "all"
+  if (target) {
+    // A bounded directory: scan both OS-ish and library packages within it.
+    return { args: ["fs", ...common, target], target };
+  }
+  if (family === "linux") {
+    const skip = SKIP_DIRS_POSIX.flatMap((d) => ["--skip-dirs", d]);
+    return { args: ["rootfs", ...common, "--pkg-types", "os", ...skip, "/"], target: "/ (OS packages)" };
+  }
+  throw new ScanGuidance(
+    "needs_target",
+    "On macOS/Windows there's no whole-system package scan; provide a `target` directory or use scope=containers with an `image`.",
+    "Ask the user which project directory (or container image) to scan."
+  );
 }
 
 export async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
   const scope = opts.scope ?? "all";
   const platform = await detectPlatform();
-  const args = buildArgs(scope, platform.family);
-  if (opts.offline) args.push("--skip-db-update", "--offline-scan");
+  const budgetMs = opts.timeoutMs ?? 90_000;
+  const trivySecs = Math.max(15, Math.floor(budgetMs / 1000) - 5);
+
+  const { args, target } = buildScan(scope, platform.family, opts, trivySecs);
 
   const [version, exec] = await Promise.all([
     trivyVersion().catch(() => "unknown"),
     pexecFile(trivyPath(), args, {
-      timeout: opts.timeoutMs ?? 180_000,
+      timeout: budgetMs,
       maxBuffer: 64 * 1024 * 1024,
       windowsHide: true,
     }),
@@ -169,7 +246,8 @@ export async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
     os: platform.pretty,
     scanner: { name: "trivy", version },
     scope,
-    findings: mapResults(raw, scope),
+    target,
+    findings: mapResults(raw),
   };
 }
 
