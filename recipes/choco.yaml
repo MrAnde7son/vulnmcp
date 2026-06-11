@@ -1,0 +1,21 @@
+# Windows — Chocolatey
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+# `elevated: true` requires an already-elevated (admin) process; the apply gate
+# refuses otherwise rather than failing mid-recipe.
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 60
+blast_radius: LOW
+steps:
+  - description: Upgrade {{package}} to the patched version
+    command: choco upgrade {{package}} --version {{fixed_version}} -y
+    elevated: true
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: choco list --local-only {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback:
+  command: choco install {{package}} --version {{installed_version}} -y --allow-downgrade
+  elevated: true

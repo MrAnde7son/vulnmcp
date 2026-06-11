@@ -1,0 +1,22 @@
+# macOS / Linuxbrew — brew
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+# Homebrew installs the current formula version; it is not run as root.
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 45
+blast_radius: LOW
+steps:
+  - description: Update Homebrew formulae
+    command: brew update
+    elevated: false
+    safe_to_automate: true
+  - description: Upgrade {{package}} to the current patched version
+    command: brew upgrade {{package}}
+    elevated: false
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: brew list --versions {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback: null

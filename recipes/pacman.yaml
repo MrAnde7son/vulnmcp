@@ -1,0 +1,19 @@
+# Arch — pacman
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+# Arch is a rolling release: it upgrades to the current repo version rather than
+# a pinned one, so {{fixed_version}} is informational only.
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 40
+blast_radius: MEDIUM
+steps:
+  - description: Synchronize and upgrade {{package}} to the current patched build
+    command: pacman -S --noconfirm {{package}}
+    elevated: true
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: pacman -Q {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback: null

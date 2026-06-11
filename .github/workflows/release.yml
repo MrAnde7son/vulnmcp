@@ -1,0 +1,80 @@
+name: release
+
+# Tag a release (vYYYY.M.N) to build one .mcpb per platform and attach them to
+# a GitHub Release. Trivy is fetched + checksum-verified per platform and bundled.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and release"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  bundle:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # All archives extract fine on Linux (tar/unzip), so we pack every
+        # platform's .mcpb from one runner. The platform-specific bit is the
+        # bundled trivy binary.
+        platform: [darwin-arm64, darwin-amd64, linux-amd64, linux-arm64, windows-amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run build
+
+      - name: Fetch + verify Trivy
+        env:
+          # Set repo variable ALLOW_UNPINNED=1 to build before SHA-256s are
+          # pinned in scripts/fetch-trivy.mjs (dev/testing only).
+          VULNMCP_ALLOW_UNPINNED: ${{ vars.ALLOW_UNPINNED }}
+        run: node scripts/fetch-trivy.mjs --platform ${{ matrix.platform }}
+
+      - name: Pack .mcpb
+        run: npx -y @anthropic-ai/mcpb pack . "vulnmcp-${{ matrix.platform }}.mcpb"
+
+      - name: Verify bundle is non-trivial
+        run: |
+          test -f "vulnmcp-${{ matrix.platform }}.mcpb"
+          ls -lh "vulnmcp-${{ matrix.platform }}.mcpb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vulnmcp-${{ matrix.platform }}
+          path: vulnmcp-${{ matrix.platform }}.mcpb
+          if-no-files-found: error
+
+  release:
+    needs: bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*.mcpb
+          fail_on_unmatched_files: true

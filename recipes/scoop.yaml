@@ -1,0 +1,22 @@
+# Windows — Scoop (user-scope, no elevation)
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+# Scoop installs into the user profile and does NOT require administrator rights.
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 45
+blast_radius: LOW
+steps:
+  - description: Update Scoop buckets
+    command: scoop update
+    elevated: false
+    safe_to_automate: true
+  - description: Upgrade {{package}} to the current patched version
+    command: scoop update {{package}}
+    elevated: false
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: scoop list {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback: null

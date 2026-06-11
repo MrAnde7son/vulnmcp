@@ -1,0 +1,23 @@
+# Alpine — apk
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 20
+blast_radius: LOW
+steps:
+  - description: Refresh the package index
+    command: apk update
+    elevated: true
+    safe_to_automate: true
+  - description: Upgrade {{package}} to the patched version
+    command: apk add {{package}}={{fixed_version}}
+    elevated: true
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: apk version {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback:
+  command: apk add {{package}}={{installed_version}}
+  elevated: true

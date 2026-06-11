@@ -1,0 +1,10 @@
+node_modules/
+dist/
+bin/
+*.mcpb
+.trivy-dl-*/
+*.log
+.DS_Store
+.env
+.vulnmcp-cache/
+coverage/

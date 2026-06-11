@@ -1,0 +1,19 @@
+# RHEL/CentOS 7 — yum
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 40
+blast_radius: LOW
+steps:
+  - description: Upgrade {{package}} to the patched version
+    command: yum update -y {{package}}-{{fixed_version}}
+    elevated: true
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: rpm -q {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback:
+  command: yum downgrade -y {{package}}-{{installed_version}}
+  elevated: true

@@ -1,0 +1,23 @@
+# Debian/Ubuntu — apt
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 30
+blast_radius: LOW
+steps:
+  - description: Update package index
+    command: apt-get update
+    elevated: true
+    safe_to_automate: true
+  - description: Upgrade {{package}} to the patched version
+    command: apt-get install --only-upgrade -y {{package}}={{fixed_version}}
+    elevated: true
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: dpkg-query -W -f=${Version} {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback:
+  command: apt-get install -y --allow-downgrades {{package}}={{installed_version}}
+  elevated: true

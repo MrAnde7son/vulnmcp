@@ -1,0 +1,19 @@
+# Python dependencies — pip
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+recipe_type: dependency_update
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 30
+blast_radius: MEDIUM
+steps:
+  - description: Upgrade {{package}} to the patched version
+    command: pip install {{package}}=={{fixed_version}}
+    elevated: false
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: pip show {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback:
+  command: pip install {{package}}=={{installed_version}}
+  elevated: false

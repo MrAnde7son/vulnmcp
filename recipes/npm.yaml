@@ -1,0 +1,20 @@
+# Node.js dependencies — npm
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+# Operates on the project in the current working directory.
+recipe_type: dependency_update
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 30
+blast_radius: MEDIUM
+steps:
+  - description: Install the patched version of {{package}}
+    command: npm install {{package}}@{{fixed_version}} --save-exact
+    elevated: false
+    safe_to_automate: true
+  - description: Verify the resolved version of {{package}}
+    command: npm ls {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback:
+  command: npm install {{package}}@{{installed_version}} --save-exact
+  elevated: false

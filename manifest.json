@@ -1,0 +1,51 @@
+{
+  "manifest_version": "0.2",
+  "name": "vulnmcp",
+  "display_name": "VulnMCP — Vulnerability Detection & Response",
+  "version": "2026.6.1",
+  "description": "On-machine vulnerability detection and approval-gated remediation for Claude Desktop. macOS, Linux, Windows.",
+  "long_description": "VulnMCP runs a local Trivy scan of your host, ranks the findings, and walks you through fixing them — showing the exact commands, rollback, and blast radius, and never changing anything without your explicit APPLY. No cloud, no background agent. Telemetry is opt-in and anonymous.",
+  "author": {
+    "name": "Hakuna",
+    "url": "https://github.com/hakuna/vulnmcp"
+  },
+  "homepage": "https://github.com/hakuna/vulnmcp",
+  "documentation": "https://github.com/hakuna/vulnmcp#readme",
+  "license": "Apache-2.0",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "VULNMCP_TELEMETRY": "${user_config.telemetry}",
+        "VULNMCP_TRIVY_PATH": "${__dirname}/bin/trivy",
+        "VULNMCP_RECIPES_DIR": "${__dirname}/recipes"
+      }
+    }
+  },
+  "user_config": {
+    "telemetry": {
+      "type": "boolean",
+      "title": "Share anonymous usage stats",
+      "description": "Opt-in. Sends only aggregate counts/severities/durations (no CVE ids, package names, hostnames, or command output) to help improve VulnMCP. Off by default.",
+      "default": false,
+      "required": false
+    }
+  },
+  "tools": [
+    { "name": "scan_system", "description": "Run a local Trivy scan and return structured CVE findings." },
+    { "name": "triage_findings", "description": "Rank findings by severity, CVSS, EPSS, and fixability." },
+    { "name": "get_remediation_recipe", "description": "Generate a safety-validated, executable remediation plan with a one-time approval token." },
+    { "name": "apply_recipe", "description": "Apply a recipe after explicit user approval. The trust boundary." }
+  ],
+  "keywords": ["security", "vulnerability", "cve", "trivy", "remediation", "mcp"],
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}

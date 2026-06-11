@@ -1,0 +1,21 @@
+# Windows — winget (Microsoft App Installer)
+# Placeholders: {{package}} {{installed_version}} {{fixed_version}} {{cve_id}}
+# On Windows there is no inline sudo; `elevated: true` means the Claude Desktop
+# process must already be running as administrator (the apply gate enforces this).
+recipe_type: package_upgrade
+reboot_required: false
+service_restart: []
+estimated_duration_seconds: 60
+blast_radius: LOW
+steps:
+  - description: Upgrade {{package}} to the patched version
+    command: winget upgrade --id {{package}} --version {{fixed_version}} --accept-package-agreements --accept-source-agreements
+    elevated: true
+    safe_to_automate: true
+  - description: Verify the installed version of {{package}}
+    command: winget list --id {{package}}
+    elevated: false
+    safe_to_automate: true
+rollback:
+  command: winget install --id {{package}} --version {{installed_version}} --accept-package-agreements --accept-source-agreements
+  elevated: true
