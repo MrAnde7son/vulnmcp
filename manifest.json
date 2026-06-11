@@ -7,11 +7,12 @@
   "long_description": "VulnMCP runs a local Trivy scan of your host, ranks the findings, and walks you through fixing them — showing the exact commands, rollback, and blast radius, and never changing anything without your explicit APPLY. No cloud, no background agent. Telemetry is opt-in and anonymous.",
   "author": {
     "name": "Hakuna",
-    "url": "https://github.com/hakuna/vulnmcp"
+    "url": "https://github.com/MrAnde7son/vulnmcp"
   },
-  "homepage": "https://github.com/hakuna/vulnmcp",
-  "documentation": "https://github.com/hakuna/vulnmcp#readme",
+  "homepage": "https://github.com/MrAnde7son/vulnmcp",
+  "documentation": "https://github.com/MrAnde7son/vulnmcp#readme",
   "license": "Apache-2.0",
+  "icon": "assets/icon.png",
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -21,7 +22,8 @@
       "env": {
         "VULNMCP_TELEMETRY": "${user_config.telemetry}",
         "VULNMCP_TRIVY_PATH": "${__dirname}/bin/trivy",
-        "VULNMCP_RECIPES_DIR": "${__dirname}/recipes"
+        "VULNMCP_RECIPES_DIR": "${__dirname}/recipes",
+        "VULNMCP_POSTHOG_KEY": ""
       }
     }
   },

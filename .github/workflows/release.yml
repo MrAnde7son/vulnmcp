@@ -41,6 +41,8 @@ jobs:
         with: { node-version: 20, cache: npm }
       - run: npm ci
       - run: npm run build
+      # Drop dev dependencies so only runtime deps land in the bundle.
+      - run: npm prune --omit=dev
 
       - name: Fetch + verify Trivy
         env:
@@ -48,6 +50,17 @@ jobs:
           # pinned in scripts/fetch-trivy.mjs (dev/testing only).
           VULNMCP_ALLOW_UNPINNED: ${{ vars.ALLOW_UNPINNED }}
         run: node scripts/fetch-trivy.mjs --platform ${{ matrix.platform }}
+
+      - name: Inject telemetry key (opt-in stays off until user enables)
+        # Bakes the public PostHog ingest key from a repo secret into the bundled
+        # manifest. Source stays keyless. If the secret is unset, telemetry is inert.
+        env:
+          POSTHOG_KEY: ${{ secrets.VULNMCP_POSTHOG_KEY }}
+        run: |
+          tmp=$(mktemp)
+          jq --arg k "${POSTHOG_KEY:-}" \
+            '.server.mcp_config.env.VULNMCP_POSTHOG_KEY = $k' manifest.json > "$tmp"
+          mv "$tmp" manifest.json
 
       - name: Pack .mcpb
         run: npx -y @anthropic-ai/mcpb pack . "vulnmcp-${{ matrix.platform }}.mcpb"

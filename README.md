@@ -31,7 +31,7 @@ packaged as a plugin you install by double-clicking.
 
 ### Plugin (recommended)
 
-1. Download `vulnmcp.mcpb` from the [latest release](https://github.com/hakuna/vulnmcp/releases).
+1. Download `vulnmcp.mcpb` from the [latest release](https://github.com/MrAnde7son/vulnmcp/releases).
 2. Double-click it. Claude Desktop installs it — no JSON editing.
 3. (Optional) toggle **Share anonymous usage stats** in the plugin's settings.
 
@@ -41,7 +41,7 @@ there's nothing else to install.
 ### From source (dev)
 
 ```bash
-git clone https://github.com/hakuna/vulnmcp && cd vulnmcp
+git clone https://github.com/MrAnde7son/vulnmcp && cd vulnmcp
 npm install && npm run build
 # Requires trivy on PATH, or set VULNMCP_TRIVY_PATH.
 ```
