@@ -85,8 +85,8 @@ async function main() {
   if (!sha256) console.warn(`⚠ UNPINNED build — got sha256=${got} (pin this!)`);
   fs.writeFileSync(archive, buf);
 
-  // Extract just the trivy binary into bin/.
-  const binDir = path.join(root, "bin");
+  // Extract just the trivy binary into the destination dir (default bin/).
+  const binDir = path.join(root, arg("dest", "bin"));
   fs.mkdirSync(binDir, { recursive: true });
   const isWin = platform.startsWith("windows");
   if (isWin) {

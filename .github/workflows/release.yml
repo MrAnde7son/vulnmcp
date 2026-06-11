@@ -51,16 +51,17 @@ jobs:
           VULNMCP_ALLOW_UNPINNED: ${{ vars.ALLOW_UNPINNED }}
         run: node scripts/fetch-trivy.mjs --platform ${{ matrix.platform }}
 
-      - name: Install runner Trivy (to download the OS-agnostic DB)
-        uses: aquasecurity/setup-trivy@v0.2.3
-        with:
-          version: v0.71.0
-          cache: true
-
       - name: Pre-download Trivy DB into the bundle
         # Bundled so a scan NEVER hits the network (the first-run ghcr.io pull is
-        # what blew the Claude Desktop tool timeout). Uses the runner's trivy.
-        run: node scripts/fetch-trivy-db.mjs --trivy "$(command -v trivy)"
+        # what blew the Claude Desktop tool timeout). The DB is OS-agnostic, so we
+        # fetch a runner-native (linux) trivy just to download it — reusing our
+        # own pinned+checksummed fetcher, no third-party action.
+        env:
+          VULNMCP_ALLOW_UNPINNED: ${{ vars.ALLOW_UNPINNED }}
+        run: |
+          node scripts/fetch-trivy.mjs --platform linux-amd64 --dest .trivyhost
+          node scripts/fetch-trivy-db.mjs --trivy ./.trivyhost/trivy
+          rm -rf .trivyhost
 
       - name: Inject telemetry key (opt-in stays off until user enables)
         # Bakes the public PostHog ingest key from a repo secret into the bundled
