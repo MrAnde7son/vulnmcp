@@ -15,6 +15,7 @@ import { recipeInput, recipeHandler } from "./tools/recipe.js";
 import { applyInput, applyHandler } from "./tools/apply.js";
 import { telemetry } from "./lib/telemetry.js";
 import { telemetryEnabled, loadConfig } from "./lib/config.js";
+import { prepareDbCache } from "./lib/scanner.js";
 
 const VERSION = "2026.6.2";
 
@@ -79,6 +80,11 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Decompress the bundled (gzipped) Trivy DB into a writable cache now, at
+  // boot, so the first scan_system call doesn't pay for it under the MCP
+  // request timeout. Fire-and-forget: runScan awaits the same memoized promise.
+  void prepareDbCache();
 
   const cfg = loadConfig();
   // One line to stderr (never stdout — stdout is the MCP channel).

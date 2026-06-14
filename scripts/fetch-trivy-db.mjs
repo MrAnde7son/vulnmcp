@@ -5,13 +5,20 @@
  * so a scan NEVER downloads anything (the first-run ghcr.io pull is what blew the
  * Claude Desktop tool timeout).
  *
+ * The raw BoltDB (db/trivy.db) is now ~1GB, which exceeds the .mcpb loader's
+ * 512MB-per-file limit and makes the bundle refuse to install. BoltDB gzips
+ * ~15:1, so we ship db/trivy.db.gz (~60MB) instead; the server decompresses it
+ * once into a writable cache on startup (see prepareDbCache in lib/scanner.ts).
+ *
  * The DB is OS-agnostic, so any runnable trivy works. Resolution order:
  *   --trivy <path>  |  TRIVY_BIN env  |  ./bin/trivy (if it runs)  |  trivy on PATH
  */
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { pipeline } from "node:stream/promises";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cacheDir = path.join(root, "trivy-cache");
@@ -54,8 +61,20 @@ execFileSync(trivy, ["--cache-dir", cacheDir, "image", "--download-db-only"], {
 
 // Sanity check: the metadata + db blob must exist.
 const dbDir = path.join(cacheDir, "db");
-if (!fs.existsSync(path.join(dbDir, "metadata.json")) || !fs.existsSync(path.join(dbDir, "trivy.db"))) {
+const rawDb = path.join(dbDir, "trivy.db");
+if (!fs.existsSync(path.join(dbDir, "metadata.json")) || !fs.existsSync(rawDb)) {
   throw new Error(`DB download did not produce ${dbDir}/{metadata.json,trivy.db}`);
 }
+
+// Compress the BoltDB and drop the raw file so no single bundle entry exceeds
+// the .mcpb 512MB-per-file limit. metadata.json stays as-is (it's tiny).
+const gzDb = `${rawDb}.gz`;
+console.log(`↻ compressing ${path.basename(rawDb)} → ${path.basename(gzDb)} (bundle 512MB/file limit)`);
+await pipeline(fs.createReadStream(rawDb), zlib.createGzip({ level: 6 }), fs.createWriteStream(gzDb));
+fs.rmSync(rawDb);
+
+if (!fs.existsSync(gzDb)) {
+  throw new Error(`compression did not produce ${gzDb}`);
+}
 const size = execFileSync("du", ["-sh", cacheDir]).toString().split("\t")[0];
-console.log(`✓ Trivy DB staged (${size.trim()})`);
+console.log(`✓ Trivy DB staged compressed (${size.trim()})`);

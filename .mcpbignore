@@ -21,6 +21,10 @@ coverage/
 .vulnmcp-cache/
 .DS_Store
 
+# Never pack the raw BoltDB — it's ~1GB and exceeds the .mcpb 512MB-per-file
+# limit. The build ships trivy-cache/db/trivy.db.gz instead (see fetch-trivy-db.mjs).
+trivy-cache/db/trivy.db
+
 # Dev-only dependencies (belt-and-suspenders alongside `npm prune --omit=dev`)
 node_modules/typescript/
 node_modules/tsx/

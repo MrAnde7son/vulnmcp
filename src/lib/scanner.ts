@@ -14,6 +14,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import zlib from "node:zlib";
+import { pipeline } from "node:stream/promises";
 import { detectPlatform, type OsFamily } from "./platform.js";
 
 const pexecFile = promisify(execFile);
@@ -64,10 +68,87 @@ export function trivyPath(): string {
   return configured;
 }
 
-/** Bundled, pre-populated DB cache (set by the .mcpb manifest). */
+// The resolved, ready-to-use cache dir (writable, holds an extracted trivy.db),
+// computed once by prepareDbCache(). `undefined` = not resolved yet; `null` =
+// resolved to "no usable cache".
+let resolvedCache: string | null | undefined;
+let preparing: Promise<string | null> | null = null;
+
+/** Stable identity for the bundled DB so a newer bundle triggers re-extraction. */
+function dbIdentity(metaPath: string): string {
+  try {
+    const m = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    return String(m.UpdatedAt ?? m.DownloadedAt ?? m.Version ?? "");
+  } catch {
+    try {
+      return String(fs.statSync(metaPath).mtimeMs);
+    } catch {
+      return "";
+    }
+  }
+}
+
+/**
+ * Materialize the offline Trivy DB cache, once.
+ *
+ * The .mcpb ships the DB gzipped (db/trivy.db.gz) because the raw BoltDB is
+ * ~1GB and exceeds the bundle's 512MB-per-file limit. The bundle dir may also
+ * be read-only, so we decompress into a per-user writable cache and point
+ * --cache-dir there. Keyed by the DB's UpdatedAt: a reinstalled/newer bundle
+ * re-extracts; an unchanged one is reused. Dev/source runs that already have a
+ * raw trivy.db are used in place.
+ *
+ * Run at server startup (not inside a tool call) so decompression never counts
+ * against the MCP request timeout. Idempotent and memoized.
+ */
+export function prepareDbCache(): Promise<string | null> {
+  if (preparing) return preparing;
+  preparing = (async () => {
+    const bundled = process.env.VULNMCP_TRIVY_CACHE;
+    if (!bundled || !fs.existsSync(bundled)) return (resolvedCache = null);
+
+    // Already-usable raw cache (dev / source runs): use as-is.
+    if (fs.existsSync(path.join(bundled, "db", "trivy.db"))) return (resolvedCache = bundled);
+
+    const gz = path.join(bundled, "db", "trivy.db.gz");
+    if (!fs.existsSync(gz)) return (resolvedCache = null); // nothing usable bundled
+
+    const meta = path.join(bundled, "db", "metadata.json");
+    const work = path.join(os.homedir(), ".vulnmcp", "trivy-cache");
+    const workDbDir = path.join(work, "db");
+    const outDb = path.join(workDbDir, "trivy.db");
+    const marker = path.join(work, ".db-version");
+
+    const want = dbIdentity(meta);
+    const have =
+      fs.existsSync(outDb) && fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : null;
+
+    if (have !== want) {
+      fs.mkdirSync(workDbDir, { recursive: true });
+      const tmp = `${outDb}.tmp`;
+      await pipeline(fs.createReadStream(gz), zlib.createGunzip(), fs.createWriteStream(tmp));
+      fs.renameSync(tmp, outDb); // atomic publish
+      if (fs.existsSync(meta)) fs.copyFileSync(meta, path.join(workDbDir, "metadata.json"));
+      fs.writeFileSync(marker, want);
+    }
+    return (resolvedCache = work);
+  })().catch((err: unknown) => {
+    // A broken cache must not wedge the server — fall back to no offline DB.
+    process.stderr.write(`vulnmcp: DB cache prep failed: ${(err as Error)?.message}\n`);
+    return (resolvedCache = null);
+  });
+  return preparing;
+}
+
+/**
+ * The cache dir to pass to trivy. Returns the prepared cache once resolved;
+ * before then (e.g. a direct unit-test call) only a ready-to-use raw cache is
+ * honored — never a gz-only bundle, which trivy can't read.
+ */
 function cacheDir(): string | null {
+  if (resolvedCache !== undefined) return resolvedCache;
   const dir = process.env.VULNMCP_TRIVY_CACHE;
-  return dir && fs.existsSync(dir) ? dir : null;
+  return dir && fs.existsSync(path.join(dir, "db", "trivy.db")) ? dir : null;
 }
 
 export async function trivyVersion(): Promise<string> {
@@ -218,6 +299,7 @@ function buildScan(scope: Scope, family: OsFamily, opts: ScanOptions, trivySecs:
 
 export async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
   const scope = opts.scope ?? "all";
+  await prepareDbCache(); // ensure the offline DB is extracted before trivy runs
   const platform = await detectPlatform();
   const budgetMs = opts.timeoutMs ?? 90_000;
   const trivySecs = Math.max(15, Math.floor(budgetMs / 1000) - 5);
@@ -254,6 +336,7 @@ export async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
 /** Surface a friendly error if trivy isn't installed/bundled. */
 export async function ensureScannerAvailable(): Promise<void> {
   try {
+    await prepareDbCache();
     await trivyVersion();
   } catch (err: any) {
     if (err?.code === "ENOENT") {
